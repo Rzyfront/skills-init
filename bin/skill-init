@@ -1,0 +1,639 @@
+#!/bin/bash
+# ============================================================================
+# AI Skill Init - Rapid Context Architecture Generator
+# ============================================================================
+# Automatically generates AI agent skill systems for any repository.
+#
+# Usage:
+#   skill-init                    # Interactive wizard
+#   skill-init --auto             # Auto-detect stack
+#   skill-init --add skill-name   # Add specific skill
+# ============================================================================
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+BOLD='\033[1m'
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+log_info() { printf "${BLUE}[INFO]${NC} %s\n" "$1"; }
+log_success() { printf "${GREEN}[SUCCESS]${NC} %s\n" "$1"; }
+log_warning() { printf "${YELLOW}[WARNING]${NC} %s\n" "$1"; }
+log_error() { printf "${RED}[ERROR]${NC} %s\n" "$1"; }
+
+log_header() {
+    printf "\n${CYAN}${BOLD}╔════════════════════════════════════════╗${NC}\n"
+    printf "${CYAN}${BOLD}║  %s${NC}\n" "$1"
+    printf "${CYAN}${BOLD}╚════════════════════════════════════════╝${NC}\n\n"
+}
+
+show_banner() {
+    clear
+    printf "${MAGENTA}${BOLD}"
+    cat << 'EOF'
+    ╔═══════════════════════════════════════════════════════════╗
+    ║                                                           ║
+    ║     ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗           ║
+    ║     ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝           ║
+    ║     ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗           ║
+    ║     ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║           ║
+    ║     ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║           ║
+    ║     ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝           ║
+    ║                                                           ║
+    ║              AI Context Architecture Generator            ║
+    ║                                                           ║
+    ╚═══════════════════════════════════════════════════════════╝
+EOF
+    printf "${NC}\n"
+}
+
+# ============================================================================
+# Configuration Storage
+# ============================================================================
+
+CONFIG_FILE="$PROJECT_ROOT/.skill-config"
+
+save_config() {
+    cat > "$CONFIG_FILE" << EOF
+PROJECT_NAME=$PROJECT_NAME
+SKILL_TYPE=$SKILL_TYPE
+AI_TOOLS=(${AI_TOOLS[@]})
+REPO_TYPE=$REPO_TYPE
+EOF
+    log_success "Configuration saved to $CONFIG_FILE"
+}
+
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+        return 0
+    fi
+    return 1
+}
+
+# ============================================================================
+# Interactive Wizard
+# ============================================================================
+
+interactive_wizard() {
+    log_header "Interactive Setup Wizard"
+    
+    # 1. Project Name
+    if [ -z "$PROJECT_NAME" ]; then
+        read -p "Project Name (default: $(basename "$PWD")): " input_name
+        PROJECT_NAME="${input_name:-$(basename "$PWD")}"
+    fi
+    log_info "Project Name: $PROJECT_NAME"
+
+    # 2. Skill Type
+    echo ""
+    echo "Choose Skill Type:"
+    echo "  1) Repository (skills/ in project root) - Recommended"
+    echo "  2) Generic (~/.claude/skills/)"
+    read -p "Select [1-2] (default: 1): " skill_type_choice
+    case "$skill_type_choice" in
+        2) SKILL_TYPE="generic" ;;
+        *) SKILL_TYPE="repository" ;;
+    esac
+    log_info "Skill Type: $SKILL_TYPE"
+
+    # 3. AI Tools
+    echo ""
+    echo "Select AI Tools to Support (space separated):"
+    echo "  1) Claude Code (CLAUDE.md)"
+    echo "  2) GitHub Copilot (.github/copilot-instructions.md)"
+    echo "  3) Gemini (GEMINI.md)"
+    echo "  4) OpenCode (opencode.json)"
+    echo "  a) All of the above"
+    read -p "Select [1-4, a] (default: a): " tools_choice
+    
+    AI_TOOLS=()
+    if [[ "$tools_choice" == *"a"* ]] || [ -z "$tools_choice" ]; then
+        AI_TOOLS=("claude" "copilot" "gemini" "opencode")
+    else
+        [[ "$tools_choice" == *"1"* ]] && AI_TOOLS+=("claude")
+        [[ "$tools_choice" == *"2"* ]] && AI_TOOLS+=("copilot")
+        [[ "$tools_choice" == *"3"* ]] && AI_TOOLS+=("gemini")
+        [[ "$tools_choice" == *"4"* ]] && AI_TOOLS+=("opencode")
+    fi
+    log_info "AI Tools: ${AI_TOOLS[*]}"
+
+    # 4. Repo Type
+    echo ""
+    echo "Select Repository Type:"
+    echo "  1) Frontend (React, Vue, Angular, etc.)"
+    echo "  2) Backend (Node, Python, Go, etc.)"
+    echo "  3) Fullstack"
+    echo "  4) Mobile"
+    echo "  5) DevOps/Infrastructure"
+    echo "  6) Other"
+    read -p "Select [1-6] (default: 3): " repo_type_choice
+    
+    case "$repo_type_choice" in
+        1) REPO_TYPE="frontend" ;;
+        2) REPO_TYPE="backend" ;;
+        4) REPO_TYPE="mobile" ;;
+        5) REPO_TYPE="devops" ;;
+        6) REPO_TYPE="other" ;;
+        *) REPO_TYPE="fullstack" ;;
+    esac
+    # 5. Add skill-creator (Optional)
+    echo ""
+    read -p "Add 'skill-creator' skill? (y/n) [y]: " add_creator
+    if [[ "$add_creator" != "n" ]]; then
+        install_skill_creator "skills/skill-creator"
+    fi
+
+    # 6. Add skill-sync (Optional)
+    echo ""
+    read -p "Add 'skill-sync' automation? (y/n) [y]: " add_sync
+    if [[ "$add_sync" != "n" ]]; then
+        install_skill_sync "skills/skill-sync"
+    fi
+
+    # 7. Add Module Contexts (Optional)
+    echo ""
+    read -p "Do you want to create modular AGENT.md contexts? (y/n) [n]: " add_contexts
+    if [[ "$add_contexts" == "y" ]]; then
+        create_module_contexts
+    fi
+
+    save_config
+    
+    # Trigger generation based on collected info
+    generate_agents_md "$PROJECT_NAME"
+    generate_setup_script "skills/setup.sh"
+    
+    # Make setup executable and run it
+    chmod +x "skills/setup.sh"
+    ./skills/setup.sh --all
+}
+
+# ============================================================================
+# Auto-Detection
+# ============================================================================
+
+detect_stack() {
+    log_info "Detecting project stack..."
+
+    local detected=()
+
+    # Check for frontend frameworks
+    if [ -f "package.json" ]; then
+        if grep -q '"next"' package.json 2>/dev/null; then
+            detected+=("nextjs")
+            log_info "  → Next.js detected"
+        fi
+        if grep -q '"react"' package.json 2>/dev/null; then
+            detected+=("react")
+            log_info "  → React detected"
+        fi
+        if grep -q '"vue"' package.json 2>/dev/null; then
+            detected+=("vue")
+            log_info "  → Vue detected"
+        fi
+        if grep -q '"@angular"' package.json 2>/dev/null; then
+            detected+=("angular")
+            log_info "  → Angular detected"
+        fi
+    fi
+
+    # Check for backend
+    if [ -f "go.mod" ]; then
+        detected+=("go")
+        log_info "  → Go detected"
+    fi
+    if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+        if grep -q "django" requirements.txt pyproject.toml setup.py 2>/dev/null; then
+            detected+=("django")
+            log_info "  → Django detected"
+        fi
+        if grep -q "fastapi" requirements.txt pyproject.toml setup.py 2>/dev/null; then
+            detected+=("fastapi")
+            log_info "  → FastAPI detected"
+        fi
+        detected+=("python")
+    fi
+    if [ -f "Cargo.toml" ]; then
+        detected+=("rust")
+        log_info "  → Rust detected"
+    fi
+
+    # Check for DevOps
+    if [ -f "Dockerfile" ] || [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
+        detected+=("docker")
+        log_info "  → Docker detected"
+    fi
+    if [ -d ".github/workflows" ] || [ -f ".gitlab-ci.yml" ]; then
+        detected+=("ci-cd")
+        log_info "  → CI/CD detected"
+    fi
+
+    if [ ${#detected[@]} -eq 0 ]; then
+        log_warning "No specific stack detected"
+        return 1
+    fi
+
+    log_success "Detected: ${detected[*]}"
+    export DETECTED_STACK=(${detected[@]})
+    return 0
+}
+
+# ============================================================================
+# Generators
+# ============================================================================
+
+generate_agents_md() {
+    local project_name="${1:-MyProject}"
+    local output_file="${2:-AGENTS.md}"
+
+    log_info "Generating AGENTS.md..."
+
+    cat > "$output_file" << EOF
+# ${project_name} AI Agent Skills System
+
+> **Single Source of Truth** - This file is the master for all AI assistants.
+> Run \`./skills/setup.sh --sync\` to synchronize skills to provider-specific locations.
+
+This repository provides AI agent skills for working with ${project_name}.
+Skills provide on-demand context and patterns for this codebase.
+
+## 🗣️ Language & Communication
+
+**CRITICAL PROTOCOL:** The model must **ALWAYS** detect the language used by the user and respond in the same language.
+
+*   **User speaks English** → Respond in English.
+*   **User speaks Spanish** → Respond in Spanish.
+*   **User speaks French** → Respond in French.
+*   *(Adapt to any language used by the user)*
+
+## 🚀 Quick Start
+
+### How Skills Work
+
+1. **Auto-detection:** AI detects context and loads appropriate skills
+2. **Composition:** Multiple skills can be active simultaneously
+3. **Priority:** CORE skills have absolute priority and must ALWAYS be respected
+
+## 🚨 CORE SKILLS - Always Active
+
+**These skills contain the MOST CRITICAL rules that must ALWAYS be respected:**
+
+| Skill | Trigger | Priority | Description |
+|-------|---------|----------|-------------|
+| **\`${project_name}-core\`** | **ALWAYS** | **CRITICAL** | Core patterns and conventions |
+| **\`git-conventions\`** | **ALWAYS** | **CRITICAL** | Git commit message style and workflow |
+| **\`knowledge-gap\`** | **UNKNOWN PATTERN** | **HIGH** | Protocol for new/undefined patterns |
+
+**⚠️ IMPORTANT:** NEVER compromise these rules. They are the foundation of the project.
+
+## 🧬 Protocol for New Patterns (MANDATORY)
+
+**IF** you develop a new feature, architecture, or pattern that is **NOT** covered by existing skills or documentation:
+
+1. **IDENTIFY:** Recognize that you are introducing a new standard or pattern.
+2. **PROPOSE:** You **MUST** ask the user if they wish to create a new skill for this pattern.
+3. **STANDARDIZE:** If agreed, suggest the structure for the new skill (Description, Trigger, Code Examples).
+
+> **AI Instruction:** *"I notice we are implementing a new pattern for [Concept]. Should we create a skill for this to maintain future consistency?"* (Translate this question to the user's language).
+
+## 🔧 Architecture & Patterns
+
+### Repository-Specific Skills
+
+| Skill | Description | Location (Source) |
+|-------|-------------|------|
+| \`${project_name}-core\` | Core patterns and conventions | [skills/${project_name}-core/SKILL.md](skills/${project_name}-core/SKILL.md) |
+
+## ⚙️ Configuration & Sync
+
+Each AI provider requires specific configuration paths. Run \`./skills/setup.sh\` to sync `skills/` to these locations:
+
+| Provider | Config File | Skill Location |
+|----------|-------------|----------------|
+| **OpenCode** | \`opencode.json\` | \`.opencode/skills/<name>/SKILL.md\` |
+| **Claude Code** | \`CLAUDE.md\` | \`.claude/skills/<name>/SKILL.md\` |
+| **Gemini** | \`GEMINI.md\` | \`.agent/skills/<name>/SKILL.md\` |
+| **GitHub Copilot** | \`.github/copilot-instructions.md\` | N/A (Embedded in instructions) |
+
+## 🎯 Auto-Invoke Rules
+
+### Development Workflow
+
+**ALWAYS invoke skills in this order:**
+
+1. **CORE Skills** (Always Active)
+   - Check \`${project_name}-core\` for fundamental rules
+
+2. **Context-Specific Skills**
+   - Check available skills in \`skills/\` (or provider-specific folders)
+
+## 🔄 Sync & Setup
+
+### Sync Skills to AI Tools
+\`\`\`bash
+./skills/setup.sh --sync
+\`\`\`
+
+### Regenerate Config Files
+\`\`\`bash
+./skills/setup.sh --all        # All formats
+./skills/setup.sh --claude     # Claude Code only
+./skills/setup.sh --copilot    # GitHub Copilot only
+./skills/setup.sh --gemini     # Gemini only
+./skills/setup.sh --opencode   # OpenCode only
+\`\`\`
+EOF
+
+    log_success "Created $output_file"
+}
+
+generate_skill_template() {
+    local skill_name="$1"
+    local skill_dir="$2"
+
+    log_info "Generating skill: $skill_name"
+
+    mkdir -p "$skill_dir"
+
+    cat > "$skill_dir/SKILL.md" << EOF
+---
+name: ${skill_name}
+description: >
+  Core patterns and conventions for ${skill_name}.
+  Trigger: When working on ${skill_name} code.
+license: MIT
+metadata:
+  author: skill-init
+  version: "1.0"
+---
+
+## When to Use
+
+Use this skill when:
+- Working on ${skill_name} features
+- Following ${skill_name} conventions
+- Debugging ${skill_name} issues
+
+## Critical Patterns
+
+### Pattern 1: [Key Pattern Name]
+
+\`\`\`[language]
+// Example code following the pattern
+\`\`\`
+
+## Code Examples
+
+### Example 1: [Description]
+
+\`\`\`[language]
+// Minimal, focused example
+\`\`\`
+
+## Commands
+
+\`\`\`bash
+# Common commands for this skill
+\`\`\`
+
+## Resources
+
+- **Documentation**: See [docs/](../../docs/) for detailed documentation
+EOF
+
+    log_success "Created $skill_dir/SKILL.md"
+}
+
+# ============================================================================
+# Skill Installation
+# ============================================================================
+
+# ============================================================================
+# Context Management
+# ============================================================================
+
+create_module_contexts() {
+    log_header "Module Context Creator"
+    echo "This wizard will help you create AGENT.md files for your modules."
+    echo "Use this for ANY module or submodule with a dense codebase (dense context)."
+    echo "This is not limited to frontend or backend - include libraries, core modules, etc."
+    echo ""
+    echo "Enter module paths (relative to root) separated by spaces."
+    echo "Example: apps/api apps/web packages/ui lib/core"
+    
+    read -p "Modules: " modules_input
+    
+    if [ -z "$modules_input" ]; then
+        log_warning "No modules specified. Skipping."
+        return
+    fi
+    
+    local template_path="$SCRIPT_DIR/../templates/agent-context/AGENT.md.tmpl"
+    local agents_list=""
+    
+    for module in $modules_input; do
+        if [ ! -d "$PROJECT_ROOT/$module" ]; then
+            log_warning "Directory $module does not exist. Creating..."
+            mkdir -p "$PROJECT_ROOT/$module"
+        fi
+        
+        local agent_file="$PROJECT_ROOT/$module/AGENT.md"
+        local module_name=$(basename "$module")
+        
+        if [ -f "$template_path" ]; then
+            sed -e "s/{MODULE_NAME}/$module_name/g" \
+                -e "s/{MODULE_DESCRIPTION}/Context for $module_name/g" \
+                -e "s/{MODULE_TYPE}/Module/g" \
+                -e "s/{TECHNOLOGIES}/TBD/g" \
+                -e "s/{UPSTREAM_DEPENDENCIES}/None/g" \
+                -e "s/{DOWNSTREAM_DEPENDENCIES}/None/g" \
+                "$template_path" > "$agent_file"
+            log_success "Created $agent_file"
+            
+            # Add to list for main AGENTS.md
+            agents_list="$agents_list| \`$module\` | $module_name Context | [$module/AGENT.md]($module/AGENT.md) |\n"
+        else
+            log_error "AGENT.md template not found"
+        fi
+    done
+    
+    # Update main AGENTS.md if it exists
+    if [ -f "AGENTS.md" ] && [ ! -z "$agents_list" ]; then
+        # Append to AGENTS.md if not already there
+        if ! grep -q "## 📂 Module Contexts" "AGENTS.md"; then
+            cat >> "AGENTS.md" << EOF
+
+## 📂 Module Contexts
+
+Specific context files for different parts of the system:
+
+| Module | Description | Link |
+|--------|-------------|------|
+EOF
+        fi
+        echo -e "$agents_list" >> "AGENTS.md"
+        log_success "Updated main AGENTS.md with module links"
+    fi
+}
+
+install_skill_creator() {
+    local target_dir="$1"
+    log_info "Installing skill-creator to $target_dir..."
+    
+    mkdir -p "$target_dir/assets"
+    
+    # Copy from templates if available, else inline (fallback)
+    local template_dir="$SCRIPT_DIR/../templates/skill-creator"
+    
+    if [ -d "$template_dir" ]; then
+        cp "$template_dir/SKILL.md" "$target_dir/"
+        cp "$template_dir/assets/SKILL-TEMPLATE.md" "$target_dir/assets/"
+    else
+        log_error "skill-creator template not found at $template_dir"
+        return 1
+    fi
+    
+    log_success "Installed skill-creator"
+}
+
+install_skill_sync() {
+    local target_dir="$1"
+    log_info "Installing skill-sync to $target_dir..."
+    
+    mkdir -p "$target_dir/assets"
+    
+    local template_dir="$SCRIPT_DIR/../templates/skill-sync"
+    
+    if [ -d "$template_dir" ]; then
+        cp "$template_dir/SKILL.md" "$target_dir/"
+        cp "$template_dir/assets/sync.sh" "$target_dir/assets/"
+        chmod +x "$target_dir/assets/sync.sh"
+    else
+        log_error "skill-sync template not found at $template_dir"
+        return 1
+    fi
+    
+    log_success "Installed skill-sync"
+}
+
+generate_setup_script() {
+    local setup_file="$1"
+    local template_path="$SCRIPT_DIR/../templates/setup.sh"
+
+    log_info "Generating setup.sh..."
+    mkdir -p "$(dirname "$setup_file")"
+
+    if [ -f "$template_path" ]; then
+        cp "$template_path" "$setup_file"
+    else
+        log_error "Setup script template not found at $template_path"
+        # Fallback to heredoc if template is missing (safety net)
+        cat > "$setup_file" << 'EOF'
+#!/bin/bash
+echo "Error: Template missing. Please reinstall skill-init."
+exit 1
+EOF
+    fi
+
+    chmod +x "$setup_file"
+    log_success "Created $setup_file"
+}
+
+# ============================================================================
+# Main Menu
+# ============================================================================
+
+show_main_menu() {
+    show_banner
+    log_header "Main Menu"
+
+    echo "  ${CYAN}1)${NC} Interactive Wizard     ${YELLOW}(Guided setup)${NC}"
+    echo "  ${CYAN}2)${NC} Auto-detect Stack      ${YELLOW}(Analyze repo)${NC}"
+    echo "  ${CYAN}3)${NC} Generate AGENTS.md     ${YELLOW}(Template)${NC}"
+    echo "  ${CYAN}4)${NC} Add New Skill          ${YELLOW}(Create skill)${NC}"
+    echo "  ${CYAN}5)${NC} Generate Setup Script  ${YELLOW}(setup.sh)${NC}"
+    echo ""
+    echo "  ${CYAN}0)${NC} Exit"
+    echo ""
+    printf "Enter choice [0-5]: "
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    cd "$PROJECT_ROOT"
+
+    if [ $# -eq 0 ]; then
+        while true; do
+            show_main_menu
+            read -r choice
+            case $choice in
+                1) interactive_wizard; break ;;
+                2) detect_stack; break ;;
+                3)
+                    read -p "Project name: " proj_name
+                    generate_agents_md "$proj_name"
+                    break
+                    ;;
+                4)
+                    read -p "Skill name: " skill_name
+                    read -p "Skill directory: " skill_dir
+                    generate_skill_template "$skill_name" "$skill_dir"
+                    break
+                    ;;
+                5)
+                    read -p "Output path: " setup_path
+                    generate_setup_script "$setup_path"
+                    break
+                    ;;
+                0)
+                    log_info "Exiting..."
+                    exit 0
+                    ;;
+                *)
+                    log_error "Invalid choice"
+                    ;;
+            esac
+        done
+    else
+        case "$1" in
+            --auto) detect_stack ;;
+            --wizard) interactive_wizard ;;
+            --help|-h)
+                cat << EOF
+AI Skill Init - Rapid Context Architecture Generator
+
+Usage:
+  skill-init                  # Interactive menu
+  skill-init --auto           # Auto-detect stack
+  skill-init --wizard         # Interactive wizard
+  skill-init --help           # Show this help
+
+EOF
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    fi
+}
+
+main "$@"
