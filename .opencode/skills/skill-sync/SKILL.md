@@ -3,7 +3,7 @@ name: skill-sync
 description: >
   Syncs skill metadata to AGENTS.md Auto-invoke sections.
   Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
-license: Apache-2.0
+license: MIT
 metadata:
   author: skill-init
   version: "1.0"
